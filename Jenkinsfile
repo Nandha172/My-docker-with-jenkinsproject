@@ -10,19 +10,22 @@ pipeline {
 
         stage('Check Environment') {
             steps {
-                sh 'hostname'  // Shows where Jenkins is running
+                script {
+                    sh 'echo "Running on: $(hostname)"'
+                }
             }
         }
 
         stage('Clone Repository') {
             steps {
-                git 'https://github.com/Nandha172/My-docker-with-jenkinsproject.git'
+                checkout scm
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 script {
+                    echo "Building Docker Image: $DOCKER_IMAGE"
                     sh 'docker build -t $DOCKER_IMAGE .'
                 }
             }
@@ -31,28 +34,51 @@ pipeline {
         stage('Login to Docker Hub') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+                    script {
+                        echo "Logging into Docker Hub..."
+                        docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-credentials') {
+                            sh 'echo "Docker login successful"'
+                        }
+                    }
                 }
             }
         }
 
         stage('Push Image to Docker Hub') {
             steps {
-                sh 'docker push $DOCKER_IMAGE'
+                script {
+                    echo "Pushing image: $DOCKER_IMAGE"
+                    sh 'docker push $DOCKER_IMAGE'
+                }
             }
         }
 
-        stage('Run Flask Container') {
+        stage('Cleanup Old Docker Images') {
             steps {
                 script {
+                    echo "Cleaning up unused Docker images..."
+                    sh 'docker image prune -f'
+                }
+            }
+        }
+
+        stage('Deploy Container') {
+            steps {
+                script {
+                    echo "Deploying container: $CONTAINER_NAME"
                     sh '''
                     # Stop and remove existing container if running
                     if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
+                        echo "Stopping existing container..."
                         docker stop $CONTAINER_NAME
                         docker rm $CONTAINER_NAME
                     fi
 
-                    # Run the new container
+                    # Remove existing image to ensure fresh pull
+                    docker rmi -f $DOCKER_IMAGE || true
+
+                    # Pull latest image and run
+                    echo "Running new container..."
                     docker run -d --name $CONTAINER_NAME -p 5000:5000 $DOCKER_IMAGE
                     '''
                 }
