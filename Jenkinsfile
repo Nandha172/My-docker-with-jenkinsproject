@@ -2,8 +2,9 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = "nandha172/flask-app"  // Your Docker Hub image name
-        CONTAINER_NAME = "flask_container"
+        DOCKER_IMAGE = "flask-app"  // Your image name
+        CONTAINER_NAME = "flaskapp" // Your container name
+        GIT_REPO = "https://github.com/Nandha172/My-docker-with-jenkinsproject.git"
     }
 
     stages {
@@ -18,7 +19,12 @@ pipeline {
 
         stage('Clone Repository') {
             steps {
-                checkout scm
+                script {
+                    echo "Cloning repository..."
+                    sh "rm -rf My-docker-with-jenkinsproject || true"
+                    sh "git clone $GIT_REPO"
+                    sh "cd My-docker-with-jenkinsproject"
+                }
             }
         }
 
@@ -26,20 +32,16 @@ pipeline {
             steps {
                 script {
                     echo "Building Docker Image: $DOCKER_IMAGE"
-                    sh 'docker build -t $DOCKER_IMAGE .'
+                    sh "docker build -t $DOCKER_IMAGE My-docker-with-jenkinsproject/"
                 }
             }
         }
 
         stage('Login to Docker Hub') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    script {
-                        echo "Logging into Docker Hub..."
-                        docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-credentials') {
-                            sh 'echo "Docker login successful"'
-                        }
-                    }
+                script {
+                    echo "Logging into Docker Hub using Jenkins Global Credentials..."
+                    sh 'docker login'
                 }
             }
         }
@@ -48,7 +50,7 @@ pipeline {
             steps {
                 script {
                     echo "Pushing image: $DOCKER_IMAGE"
-                    sh 'docker push $DOCKER_IMAGE'
+                    sh "docker push $DOCKER_IMAGE"
                 }
             }
         }
@@ -57,7 +59,7 @@ pipeline {
             steps {
                 script {
                     echo "Cleaning up unused Docker images..."
-                    sh 'docker image prune -f'
+                    sh 'docker image prune -f || true'
                 }
             }
         }
@@ -66,12 +68,12 @@ pipeline {
             steps {
                 script {
                     echo "Deploying container: $CONTAINER_NAME"
-                    sh '''
+                    sh """
                     # Stop and remove existing container if running
-                    if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
+                    if [ \$(docker ps -q -f name=$CONTAINER_NAME) ]; then
                         echo "Stopping existing container..."
-                        docker stop $CONTAINER_NAME
-                        docker rm $CONTAINER_NAME
+                        docker stop $CONTAINER_NAME || true
+                        docker rm $CONTAINER_NAME || true
                     fi
 
                     # Remove existing image to ensure fresh pull
@@ -80,7 +82,7 @@ pipeline {
                     # Pull latest image and run
                     echo "Running new container..."
                     docker run -d --name $CONTAINER_NAME -p 5000:5000 $DOCKER_IMAGE
-                    '''
+                    """
                 }
             }
         }
